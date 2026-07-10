@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FNF Mod Structure Converter</title>
+    <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #121214;
+            color: #e2e8f0;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: #1a1a1e;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            border: 1px solid #2d2d34;
+            text-align: center;
+        }
+        h1 { color: #f43f5e; margin-top: 0; font-size: 24px; }
+        p { color: #94a3b8; font-size: 14px; line-height: 1.5; }
+        
+        .mode-selector {
+            display: flex;
+            background: #222227;
+            border-radius: 8px;
+            padding: 5px;
+            margin: 20px 0;
+            border: 1px solid #2d2d34;
+        }
+        .mode-btn {
+            flex: 1;
+            background: transparent;
+            color: #94a3b8;
+            border: none;
+            padding: 10px;
+            cursor: pointer;
+            border-radius: 6px;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        .mode-btn.active {
+            background: #f43f5e;
+            color: white;
+        }
+
+        .drop-zone {
+            border: 2px dashed #f43f5e;
+            border-radius: 8px;
+            padding: 40px 20px;
+            margin: 20px 0;
+            cursor: pointer;
+            background: #222227;
+            transition: background 0.2s;
+        }
+        .drop-zone:hover { background: #2a2a32; }
+        input[type="file"] { display: none; }
+        button.action-btn {
+            background: #f43f5e;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:disabled { background: #4a4a52; cursor: not-allowed; }
+        #status { margin-top: 15px; font-weight: bold; font-size: 14px; }
+        .success { color: #10b981; }
+        .error { color: #ef4444; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>FNF Layout Converter</h1>
+    <p>Choose your direction, drop your mod ZIP, and instantly re-arrange charts and audio layouts.</p>
+    
+    <div class="mode-selector">
+        <button class="mode-btn active" id="v2pBtn">V-Slice ➔ Psych (P-Slice)</button>
+        <button class="mode-btn" id="p2vBtn">Psych ➔ V-Slice</button>
+    </div>
+
+    <div class="drop-zone" id="dropZone">
+        <span id="dropText">Click or Drag & Drop V-Slice Mod ZIP here</span>
+        <input type="file" id="fileInput" accept=".zip">
+    </div>
+
+    <button class="action-btn" id="convertBtn" disabled>Convert Mod</button>
+    <div id="status"></div>
+</div>
+
+<script>
+    const fileInput = document.getElementById('fileInput');
+    const dropZone = document.getElementById('dropZone');
+    const convertBtn = document.getElementById('convertBtn');
+    const statusDiv = document.getElementById('status');
+    const dropText = document.getElementById('dropText');
+    
+    const v2pBtn = document.getElementById('v2pBtn');
+    const p2vBtn = document.getElementById('p2vBtn');
+
+    let currentMode = 'v2p'; // 'v2p' or 'p2v'
+    let activeZipData = null;
+    let originalFileName = "mod";
+
+    // Mode Toggle Logic
+    v2pBtn.addEventListener('click', () => {
+        currentMode = 'v2p';
+        v2pBtn.classList.add('active');
+        p2vBtn.classList.remove('active');
+        dropText.innerText = "Click or Drag & Drop V-Slice Mod ZIP here";
+        resetFile();
+    });
+
+    p2vBtn.addEventListener('click', () => {
+        currentMode = 'p2v';
+        p2vBtn.classList.add('active');
+        v2pBtn.classList.remove('active');
+        dropText.innerText = "Click or Drag & Drop Psych Engine Mod ZIP here";
+        resetFile();
+    });
+
+    function resetFile() {
+        activeZipData = null;
+        fileInput.value = '';
+        convertBtn.disabled = true;
+        statusDiv.innerText = '';
+    }
+
+    // Drag and drop mechanics
+    dropZone.addEventListener('click', () => fileInput.click());
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = '#2a2a32'; });
+    dropZone.addEventListener('dragleave', () => dropZone.style.background = '#222227');
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.background = '#222227';
+        if(e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        if(e.target.files.length) handleFile(e.target.files[0]);
+    });
+
+    function handleFile(file) {
+        if (!file.name.endsWith('.zip')) {
+            showStatus("Please upload a valid .zip archive!", "error");
+            return;
+        }
+        originalFileName = file.name.replace('.zip', '');
+        
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            activeZipData = new Uint8Array(evt.target.result);
+            convertBtn.disabled = false;
+            showStatus(`Loaded: ${file.name}. Ready to process!`, "success");
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function showStatus(text, className) {
+        statusDiv.innerText = text;
+        statusDiv.className = className || '';
+    }
+
+    convertBtn.addEventListener('click', () => {
+        if (!activeZipData) return;
+        showStatus("Analyzing and rebuilding archive properties...", "");
+
+        fflate.unzip(activeZipData, (err, unzipped) => {
+            if (err) {
+                showStatus("Error reading the ZIP file.", "error");
+                return;
+            }
+
+            const outputStructure = {};
+
+            if (currentMode === 'v2p') {
+                // ==========================================
+                // DIRECTION: V-SLICE ➔ PSYCH ENGINE
+                // ==========================================
+                for (const path in unzipped) {
+                    const fileData = unzipped[path];
+                    if (fileData.length === 0) continue;
+
+                    const cleanPath = path.replace(/^[^/]+\//, ''); 
+
+                    // Check for charts
+                    const chartMatch = cleanPath.match(/songs\/([^/]+)\/charts\/([^/]+)\.json$/i);
+                    if (chartMatch) {
+                        const songName = chartMatch[1].toLowerCase();
+                        const fileName = chartMatch[2].toLowerCase();
+                        let psychChartName = (fileName === 'base') ? songName : `${songName}-${fileName}`;
+                        outputStructure[`data/${songName}/${psychChartName}.json`] = fileData;
+                        continue;
+                    }
+
+                    // Check for audio
+                    const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
+                    if (audioMatch) {
+                        const songName = audioMatch[1].toLowerCase();
+                        outputStructure[`songs/${songName}/${audioMatch[2]}`] = fileData;
+                        continue;
+                    }
+
+                    // Pass characters
+                    if (cleanPath.includes('images/characters/')) {
+                        const idx = cleanPath.indexOf('images/');
+                        outputStructure[cleanPath.substring(idx)] = fileData;
+                    }
+                }
+            } else {
+                // ==========================================
+                // DIRECTION: PSYCH ENGINE ➔ V-SLICE
+                // ==========================================
+                for (const path in unzipped) {
+                    const fileData = unzipped[path];
+                    if (fileData.length === 0) continue;
+
+                    const cleanPath = path.replace(/^[^/]+\//, '');
+
+                    // Check for Psych charts: data/songname/songname-difficulty.json
+                    const chartMatch = cleanPath.match(/data\/([^/]+)\/([^/]+)\.json$/i);
+                    if (chartMatch) {
+                        const songName = chartMatch[1].toLowerCase();
+                        let difficulty = chartMatch[2].toLowerCase().replace(`${songName}-`, '');
+                        
+                        // If file name equals song name completely, it's the normal chart
+                        if (difficulty === songName) difficulty = 'base';
+                        
+                        outputStructure[`songs/${songName}/charts/${difficulty}.json`] = fileData;
+                        continue;
+                    }
+
+                    // Check for Psych audio: songs/songname/Inst.ogg
+                    const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
+                    if (audioMatch) {
+                        const songName = audioMatch[1].toLowerCase();
+                        outputStructure[`songs/${songName}/${audioMatch[2]}`] = fileData;
+                        continue;
+                    }
+
+                    // Pass characters into V-Slice layouts
+                    if (cleanPath.includes('images/characters/')) {
+                        const idx = cleanPath.indexOf('images/');
+                        outputStructure[cleanPath.substring(idx)] = fileData;
+                    }
+                }
+            }
+
+            if (Object.keys(outputStructure).length === 0) {
+                showStatus("No matching structural assets found for this direction mode.", "error");
+                return;
+            }
+
+            showStatus("Packing files into target layout output...", "success");
+
+            fflate.zip(outputStructure, (err, packedZip) => {
+                if (err) {
+                    showStatus("Error packing target zip folder.", "error");
+                    return;
+                }
+
+                const blob = new Blob([packedZip], { type: 'application/zip' });
+                const link = document.createElement('a');
+                link.href = URL.createObjectURL(blob);
+                
+                const suffix = (currentMode === 'v2p') ? '_PsychPort' : '_VSlicePort';
+                link.download = `${originalFileName}${suffix}.zip`;
+                link.click();
+                showStatus("Done! Exported successfully.", "success");
+            });
+        });
+    });
+</script>
+
+</body>
+</html>

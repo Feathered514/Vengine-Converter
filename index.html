@@ -1,9 +1,9 @@
-<!DOCTYPE html>
+    <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FNF 1-Click Mod Converter</title>
+    <title>FNF Flat Full Mod Converter</title>
     <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
     <style>
         body {
@@ -85,8 +85,8 @@
 <body>
 
 <div class="container">
-    <h1>FNF 1-Click Layout Converter</h1>
-    <p>Drop your ZIP. This tool builds the entire target root folder layout perfectly so it installs with no extra moving or renaming!</p>
+    <h1>FNF Flat Full Mod Converter</h1>
+    <p>Converts charts while preserving all scripts, videos, sounds, and meta files directly at the root level!</p>
     
     <div class="mode-selector">
         <button class="mode-btn active" id="v2pBtn">V-Slice ➔ Psych (P-Slice)</button>
@@ -114,7 +114,7 @@
 
     let currentMode = 'v2p';
     let activeZipData = null;
-    let originalFileName = "mymod";
+    let originalFileName = "mod";
 
     v2pBtn.addEventListener('click', () => {
         currentMode = 'v2p';
@@ -157,9 +157,7 @@
             showStatus("Please upload a valid .zip archive!", "error");
             return;
         }
-        // Generate a clean folder name from file name (lowercase, no spaces)
-        originalFileName = file.name.replace('.zip', '').toLowerCase().replace(/[^a-z0-9_\-]/g, "");
-        if(!originalFileName) originalFileName = "custom_mod";
+        originalFileName = file.name.replace('.zip', '');
         
         const reader = new FileReader();
         reader.onload = function(evt) {
@@ -177,7 +175,7 @@
 
     convertBtn.addEventListener('click', () => {
         if (!activeZipData) return;
-        showStatus("Analyzing and structuring asset files...", "");
+        showStatus("Converting structure...", "");
 
         fflate.unzip(activeZipData, (err, unzipped) => {
             if (err) {
@@ -187,19 +185,27 @@
 
             const outputStructure = {};
             let detectedSongs = new Set();
-            const rootFolderName = originalFileName;
+
+            // First step: Clean paths if they have an accidental main folder wrapper inside the input zip
+            const cleanedUnzipped = {};
+            for (const path in unzipped) {
+                if (path.endsWith('/')) continue;
+                let cleanPath = path;
+                // If path starts with a folder name like "vs_whitty/data/...", strip the top folder layout
+                if (path.includes('/') && !path.startsWith('data/') && !path.startsWith('songs/') && !path.startsWith('images/') && !path.startsWith('scripts/') && !path.startsWith('sounds/') && !path.startsWith('videos/') && !path.startsWith('shared/') && !path.startsWith('_polymod')) {
+                    cleanPath = path.substring(path.indexOf('/') + 1);
+                }
+                cleanedUnzipped[cleanPath] = unzipped[path];
+            }
 
             if (currentMode === 'v2p') {
                 // ==========================================
-                // DIRECTION: V-SLICE ➔ PSYCH ENGINE
+                // V-SLICE ➔ PSYCH ENGINE
                 // ==========================================
-                for (const path in unzipped) {
-                    const fileData = unzipped[path];
-                    if (fileData.length === 0 || path.endsWith('/')) continue;
+                for (const cleanPath in cleanedUnzipped) {
+                    const fileData = cleanedUnzipped[cleanPath];
 
-                    const cleanPath = path.replace(/^[^/]+\//, ''); 
-
-                    // Fix and remap Charts
+                    // Convert Charts and format names
                     const chartMatch = cleanPath.match(/songs\/([^/]+)\/charts\/([^/]+)\.json$/i);
                     if (chartMatch) {
                         const songName = chartMatch[1].toLowerCase();
@@ -207,89 +213,66 @@
                         detectedSongs.add(songName);
 
                         let psychChartName = (fileName === 'base') ? songName : `${songName}-${fileName}`;
-                        outputStructure[`${rootFolderName}/data/${songName}/${psychChartName}.json`] = fileData;
+                        outputStructure[`data/${songName}/${psychChartName}.json`] = fileData;
                         continue;
                     }
 
-                    // Fix and remap Audio
+                    // Map V-slice audio format
                     const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
                     if (audioMatch) {
                         const songName = audioMatch[1].toLowerCase();
                         detectedSongs.add(songName);
-                        outputStructure[`${rootFolderName}/songs/${songName}/${audioMatch[2]}`] = fileData;
+                        outputStructure[`songs/${songName}/${audioMatch[2]}`] = fileData;
                         continue;
                     }
 
-                    // Pass custom character graphics
-                    if (cleanPath.includes('images/characters/')) {
-                        const idx = cleanPath.indexOf('images/');
-                        outputStructure[`${rootFolderName}/${cleanPath.substring(idx)}`] = fileData;
-                    }
+                    // Keep everything else exactly as it is (scripts, videos, sounds, etc.)
+                    outputStructure[cleanPath] = fileData;
                 }
 
-                // AUTOMATICALLY INJECT THE WEEKS CONFIG FILE
-                if(detectedSongs.size > 0) {
+                // Inject default metadata weeks info if it doesn't exist
+                if(detectedSongs.size > 0 && !outputStructure[`weeks/${originalFileName}.json`]) {
                     const songArray = Array.from(detectedSongs);
                     const weekJson = {
                         "songs": songArray.map(song => [song, "face", [146, 113, 253]]),
                         "weekCharacters": ["dad", "bf", "gf"],
                         "weekBackground": "stage",
-                        "storyName": rootFolderName,
+                        "storyName": originalFileName,
                         "weekBefore": "tutorial",
                         "freeplayColor": [146, 113, 253],
                         "startUnlocked": true,
                         "hideStoryMode": false,
-                        "weekName": rootFolderName,
+                        "weekName": originalFileName,
                         "hideFreeplay": false
                     };
-
                     const encoder = new TextEncoder();
-                    outputStructure[`${rootFolderName}/weeks/${rootFolderName}.json`] = encoder.encode(JSON.stringify(weekJson, null, "\t"));
+                    outputStructure[`weeks/${originalFileName}.json`] = encoder.encode(JSON.stringify(weekJson, null, "\t"));
                 }
 
             } else {
                 // ==========================================
-                // DIRECTION: PSYCH ENGINE ➔ V-SLICE
+                // PSYCH ENGINE ➔ V-SLICE
                 // ==========================================
-                for (const path in unzipped) {
-                    const fileData = unzipped[path];
-                    if (fileData.length === 0 || path.endsWith('/')) continue;
+                for (const cleanPath in cleanedUnzipped) {
+                    const fileData = cleanedUnzipped[cleanPath];
 
-                    const cleanPath = path.replace(/^[^/]+\//, '');
-
-                    // Convert charts back
+                    // Convert charts back to V-Slice layouts
                     const chartMatch = cleanPath.match(/data\/([^/]+)\/([^/]+)\.json$/i);
                     if (chartMatch) {
                         const songName = chartMatch[1].toLowerCase();
                         let difficulty = chartMatch[2].toLowerCase().replace(`${songName}-`, '');
                         if (difficulty === songName) difficulty = 'base';
                         
-                        outputStructure[`${rootFolderName}/songs/${songName}/charts/${difficulty}.json`] = fileData;
+                        outputStructure[`songs/${songName}/charts/${difficulty}.json`] = fileData;
                         continue;
                     }
 
-                    // Convert audio back
-                    const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
-                    if (audioMatch) {
-                        const songName = audioMatch[1].toLowerCase();
-                        outputStructure[`${rootFolderName}/songs/${songName}/${audioMatch[2]}`] = fileData;
-                        continue;
-                    }
-
-                    // Pass characters
-                    if (cleanPath.includes('images/characters/')) {
-                        const idx = cleanPath.indexOf('images/');
-                        outputStructure[`${rootFolderName}/${cleanPath.substring(idx)}`] = fileData;
-                    }
+                    // Keep all other files intact
+                    outputStructure[cleanPath] = fileData;
                 }
             }
 
-            if (Object.keys(outputStructure).length === 0) {
-                showStatus("No matching mod assets detected for reorganization.", "error");
-                return;
-            }
-
-            showStatus("Packing full-mod directory map...", "success");
+            showStatus("Packing root folders...", "success");
 
             fflate.zip(outputStructure, (err, packedZip) => {
                 if (err) {
@@ -300,10 +283,9 @@
                 const blob = new Blob([packedZip], { type: 'application/zip' });
                 const link = document.createElement('a');
                 link.href = URL.createObjectURL(blob);
-                
-                link.download = `${rootFolderName}_converted.zip`;
+                link.download = `${originalFileName}_converted.zip`;
                 link.click();
-                showStatus("Done! Ready to extract directly into your mods folder.", "success");
+                showStatus("Done! Exported flat mod layout.", "success");
             });
         });
     });

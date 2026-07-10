@@ -1,9 +1,10 @@
+<!DOCTYPE htmhtml>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FNF Mod Structure Converter</title>
+    <title>FNF Complete Layout Converter</title>
     <script src="https://cdn.jsdelivr.net/npm/fflate@0.8.2/umd/index.js"></script>
     <style>
         body {
@@ -85,8 +86,8 @@
 <body>
 
 <div class="container">
-    <h1>FNF Layout Converter</h1>
-    <p>Choose your direction, drop your mod ZIP, and instantly re-arrange charts and audio layouts.</p>
+    <h1>FNF Full Layout Converter</h1>
+    <p>Converts charts, audio, AND automatically generates the <strong>weeks metadata files</strong> so songs pop up in Freeplay!</p>
     
     <div class="mode-selector">
         <button class="mode-btn active" id="v2pBtn">V-Slice ➔ Psych (P-Slice)</button>
@@ -112,11 +113,10 @@
     const v2pBtn = document.getElementById('v2pBtn');
     const p2vBtn = document.getElementById('p2vBtn');
 
-    let currentMode = 'v2p'; // 'v2p' or 'p2v'
+    let currentMode = 'v2p';
     let activeZipData = null;
     let originalFileName = "mod";
 
-    // Mode Toggle Logic
     v2pBtn.addEventListener('click', () => {
         currentMode = 'v2p';
         v2pBtn.classList.add('active');
@@ -140,7 +140,6 @@
         statusDiv.innerText = '';
     }
 
-    // Drag and drop mechanics
     dropZone.addEventListener('click', () => fileInput.click());
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.background = '#2a2a32'; });
     dropZone.addEventListener('dragleave', () => dropZone.style.background = '#222227');
@@ -159,13 +158,13 @@
             showStatus("Please upload a valid .zip archive!", "error");
             return;
         }
-        originalFileName = file.name.replace('.zip', '');
+        originalFileName = file.name.replace('.zip', '').replace(/[^a-zA-Z0-9_\-]/g, "");
         
         const reader = new FileReader();
         reader.onload = function(evt) {
             activeZipData = new Uint8Array(evt.target.result);
             convertBtn.disabled = false;
-            showStatus(`Loaded: ${file.name}. Ready to process!`, "success");
+            showStatus(`Loaded: ${file.name}. Ready!`, "success");
         };
         reader.readAsArrayBuffer(file);
     }
@@ -177,7 +176,7 @@
 
     convertBtn.addEventListener('click', () => {
         if (!activeZipData) return;
-        showStatus("Analyzing and rebuilding archive properties...", "");
+        showStatus("Processing data layouts...", "");
 
         fflate.unzip(activeZipData, (err, unzipped) => {
             if (err) {
@@ -186,10 +185,11 @@
             }
 
             const outputStructure = {};
+            let detectedSongs = new Set();
 
             if (currentMode === 'v2p') {
                 // ==========================================
-                // DIRECTION: V-SLICE ➔ PSYCH ENGINE
+                // V-SLICE ➔ PSYCH ENGINE (WITH WEEKS GENERATION)
                 // ==========================================
                 for (const path in unzipped) {
                     const fileData = unzipped[path];
@@ -197,33 +197,59 @@
 
                     const cleanPath = path.replace(/^[^/]+\//, ''); 
 
-                    // Check for charts
+                    // Handle Charts and Naming Fixes
                     const chartMatch = cleanPath.match(/songs\/([^/]+)\/charts\/([^/]+)\.json$/i);
                     if (chartMatch) {
                         const songName = chartMatch[1].toLowerCase();
                         const fileName = chartMatch[2].toLowerCase();
+                        detectedSongs.add(songName);
+
                         let psychChartName = (fileName === 'base') ? songName : `${songName}-${fileName}`;
                         outputStructure[`data/${songName}/${psychChartName}.json`] = fileData;
                         continue;
                     }
 
-                    // Check for audio
+                    // Handle Audio
                     const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
                     if (audioMatch) {
                         const songName = audioMatch[1].toLowerCase();
+                        detectedSongs.add(songName);
                         outputStructure[`songs/${songName}/${audioMatch[2]}`] = fileData;
                         continue;
                     }
 
-                    // Pass characters
+                    // Characters
                     if (cleanPath.includes('images/characters/')) {
                         const idx = cleanPath.indexOf('images/');
                         outputStructure[cleanPath.substring(idx)] = fileData;
                     }
                 }
+
+                // AUTOMATICALLY GENERATE PSYCH WEEK FILES FOR FREEPLAY
+                if(detectedSongs.size > 0) {
+                    const songArray = Array.from(detectedSongs);
+                    
+                    // Create a Week JSON for Psych Engine
+                    const weekJson = {
+                        "songs": songArray.map(song => [song, "face", [146, 113, 253]]),
+                        "weekCharacters": ["dad", "bf", "gf"],
+                        "weekBackground": "stage",
+                        "storyName": originalFileName,
+                        "weekBefore": "tutorial",
+                        "freeplayColor": [146, 113, 253],
+                        "startUnlocked": true,
+                        "hideStoryMode": false,
+                        "weekName": originalFileName,
+                        "hideFreeplay": false
+                    };
+
+                    const encoder = new TextEncoder();
+                    outputStructure[`weeks/${originalFileName}.json`] = encoder.encode(JSON.stringify(weekJson, null, "\t"));
+                }
+
             } else {
                 // ==========================================
-                // DIRECTION: PSYCH ENGINE ➔ V-SLICE
+                // PSYCH ENGINE ➔ V-SLICE
                 // ==========================================
                 for (const path in unzipped) {
                     const fileData = unzipped[path];
@@ -231,20 +257,16 @@
 
                     const cleanPath = path.replace(/^[^/]+\//, '');
 
-                    // Check for Psych charts: data/songname/songname-difficulty.json
                     const chartMatch = cleanPath.match(/data\/([^/]+)\/([^/]+)\.json$/i);
                     if (chartMatch) {
                         const songName = chartMatch[1].toLowerCase();
                         let difficulty = chartMatch[2].toLowerCase().replace(`${songName}-`, '');
-                        
-                        // If file name equals song name completely, it's the normal chart
                         if (difficulty === songName) difficulty = 'base';
                         
                         outputStructure[`songs/${songName}/charts/${difficulty}.json`] = fileData;
                         continue;
                     }
 
-                    // Check for Psych audio: songs/songname/Inst.ogg
                     const audioMatch = cleanPath.match(/songs\/([^/]+)\/([^/]+\.ogg)$/i);
                     if (audioMatch) {
                         const songName = audioMatch[1].toLowerCase();
@@ -252,7 +274,6 @@
                         continue;
                     }
 
-                    // Pass characters into V-Slice layouts
                     if (cleanPath.includes('images/characters/')) {
                         const idx = cleanPath.indexOf('images/');
                         outputStructure[cleanPath.substring(idx)] = fileData;
@@ -261,15 +282,15 @@
             }
 
             if (Object.keys(outputStructure).length === 0) {
-                showStatus("No matching structural assets found for this direction mode.", "error");
+                showStatus("No structural matches found.", "error");
                 return;
             }
 
-            showStatus("Packing files into target layout output...", "success");
+            showStatus("Building target package container...", "success");
 
             fflate.zip(outputStructure, (err, packedZip) => {
                 if (err) {
-                    showStatus("Error packing target zip folder.", "error");
+                    showStatus("Error assembling zip wrapper.", "error");
                     return;
                 }
 
@@ -280,7 +301,7 @@
                 const suffix = (currentMode === 'v2p') ? '_PsychPort' : '_VSlicePort';
                 link.download = `${originalFileName}${suffix}.zip`;
                 link.click();
-                showStatus("Done! Exported successfully.", "success");
+                showStatus("Export successfully complete!", "success");
             });
         });
     });
